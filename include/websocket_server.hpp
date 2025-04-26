@@ -30,6 +30,7 @@ private:
     void on_close(connection_hdl hdl);
     void subscribe_to_orderbook(const std::string& symbol);
     void handle_orderbook_update(const std::string& symbol, const std::string& data);
+    void on_deribit_message(websocketpp::connection_hdl hdl, client::message_ptr msg);
     void init_deribit_connection();
 
     Config& config_;

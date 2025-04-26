@@ -27,6 +27,9 @@ include_directories(
 # Source files
 file(GLOB SOURCES "src/*.cpp")
 
+# Create the log directory
+file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/logs)
+
 # Create main executable
 add_executable(${PROJECT_NAME} ${SOURCES})
 

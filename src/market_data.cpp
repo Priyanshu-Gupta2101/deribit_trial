@@ -65,4 +65,21 @@ web::json::value MarketData::get_instruments(const std::string& currency, const 
     return web::json::value::null();
 }
 
-} // namespace deribit
+web::json::value MarketData::get_options_instruments(const std::string& currency) {
+    web::uri_builder builder("/public/get_instruments");
+    builder.append_query("currency", currency)
+           .append_query("kind", "option");
+
+    try {
+        auto response = client_.request(web::http::methods::GET, builder.to_string()).get();
+        if (response.status_code() == web::http::status_codes::OK) {
+            std::cout << "Retrieved options instruments for currency: " << currency << std::endl;
+            return response.extract_json().get();
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Error getting options instruments: " << e.what() << std::endl;
+    }
+    return web::json::value::null();
+}
+
+}

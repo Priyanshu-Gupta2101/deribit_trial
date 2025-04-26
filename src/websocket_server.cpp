@@ -112,16 +112,27 @@ void WebsocketServer::subscribe_to_orderbook(const std::string& symbol) {
 }
 
 void WebsocketServer::handle_orderbook_update(const std::string& symbol, const std::string& data) {
-    // Broadcast the update to all clients subscribed to this symbol
+    // Start timing for message propagation
+    START_TIMING("ws_message_propagation");
+    
+    // Pre-filter clients that have subscribed to this symbol to avoid unnecessary checks
+    std::vector<connection_hdl> recipients;
     for (const auto& subscription : subscriptions_) {
         if (subscription.second.find(symbol) != subscription.second.end()) {
-            try {
-                ws_server_.send(subscription.first, data, websocketpp::frame::opcode::text);
-            } catch (const std::exception& e) {
-                std::cerr << "Error sending orderbook update to client: " << e.what() << std::endl;
-            }
+            recipients.push_back(subscription.first);
         }
     }
+    
+    // Broadcast only to relevant clients
+    for (const auto& hdl : recipients) {
+        try {
+            ws_server_.send(hdl, data, websocketpp::frame::opcode::text);
+        } catch (const std::exception& e) {
+            std::cerr << "Error sending orderbook update to client: " << e.what() << std::endl;
+        }
+    }
+    
+    END_TIMING("ws_message_propagation");
 }
 
 void WebsocketServer::init_deribit_connection() {
@@ -161,8 +172,40 @@ void WebsocketServer::init_deribit_connection() {
         });
         
         std::cout << "Successfully connected to Deribit WebSocket" << std::endl;
+
+        deribit_client_connection_->set_message_handler(
+            std::bind(&WebsocketServer::on_deribit_message, this, 
+                      std::placeholders::_1, std::placeholders::_2)
+        );
+
     } catch (const std::exception& e) {
         std::cout << "Error initializing Deribit connection: " << e.what() << std::endl;
+    }
+}
+
+void WebsocketServer::on_deribit_message(websocketpp::connection_hdl hdl, client::message_ptr msg) {
+    try {
+        std::string payload = msg->get_payload();
+        std::cout << "Received from Deribit: " << payload << std::endl;
+        
+        Json::Value root;
+        Json::Reader reader;
+        if (!reader.parse(payload, root)) {
+            std::cerr << "Failed to parse message from Deribit" << std::endl;
+            return;
+        }
+        
+        if (root.isMember("params") && root["params"].isMember("channel")) {
+            std::string channel = root["params"]["channel"].asString();
+            size_t firstDot = channel.find('.');
+            size_t secondDot = channel.find('.', firstDot + 1);
+            if (firstDot != std::string::npos && secondDot != std::string::npos) {
+                std::string symbol = channel.substr(firstDot + 1, secondDot - firstDot - 1);
+                handle_orderbook_update(symbol, payload);
+            }
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Error processing Deribit message: " << e.what() << std::endl;
     }
 }
 

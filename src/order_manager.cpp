@@ -22,6 +22,7 @@ namespace deribit
 
     std::string OrderManager::place_buy_order(const OrderParams &params)
     {
+        START_TIMING("buy_order_placement");
         web::uri_builder builder("/private/buy");
         builder.append_query("amount", params.amount)
             .append_query("instrument_name", params.instrument_name)
@@ -37,6 +38,7 @@ namespace deribit
         try
         {
             auto response = client_.request(request).get();
+            END_TIMING("buy_order_placement");
             // std::cout << response.to_string() << std::endl;
             if (response.status_code() == web::http::status_codes::OK)
             {
@@ -47,7 +49,7 @@ namespace deribit
         }
         catch (const std::exception &e)
         {
-            // Handle error
+            END_TIMING("buy_order_placement");
             std::cout << e.what() << std::endl;
         }
         return "";
@@ -56,6 +58,7 @@ namespace deribit
     // https://test.deribit.com/api/v2/private/sell?advanced=usd&amount=10&instrument_name=BTC-PERPETUAL&otoco_config[]=%5Bobject%20Object%5D&price=66610&type=limit
 
     std::string OrderManager::place_sell_order(const OrderParams& params) {
+        START_TIMING("sell_order_placement");
         web::uri_builder builder("/private/sell");
         builder.append_query("advanced", "usd")
             .append_query("amount", params.amount)
@@ -72,13 +75,14 @@ namespace deribit
 
         try {
             auto response = client_.request(request).get();
+            END_TIMING("sell_order_placement");
             // std::cout << response.to_string() << std::endl;
             if (response.status_code() == web::http::status_codes::OK) {
                 auto json = response.extract_json().get();
                 return json["result"]["order"]["order_id"].as_string();
             }
         } catch (const std::exception& e) {
-            // Handle error
+            END_TIMING("sell_order_placement");
             std::cout << e.what() << std::endl; 
         }
         return "";
@@ -150,4 +154,4 @@ namespace deribit
         return web::json::value::null();
     }
 
-} // namespace deribit
+}

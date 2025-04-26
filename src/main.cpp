@@ -35,14 +35,47 @@ deribit::Config load_config(const std::string &config_path)
         root["api_credentials"]["client_secret"].asString(),
         root["server"]["websocket_port"].asInt(),
         root["trading"]["default_currency"].asString(),
-        root["trading"]["default_instrument"].asString(), // Add this line
+        root["trading"]["default_instrument"].asString(),
         supported_instruments);
+}
+
+void run_performance_test(deribit::OrderManager& order_manager, deribit::Config& config) 
+{
+    std::cout << "\nRunning performance test...\n";
+    
+    const int NUM_ORDERS = 10;
+    deribit::OrderParams params{
+        config.trading.default_instrument,
+        1.0,
+        60000.0,
+        "limit"
+    };
+    
+    std::vector<std::string> order_ids;
+    
+    for (int i = 0; i < NUM_ORDERS; i++) {
+        params.price = 60000.0 + (i * 100);
+        std::string order_id = order_manager.place_buy_order(params);
+        if (!order_id.empty()) {
+            order_ids.push_back(order_id);
+        }
+    }
+    
+    for (const auto& id : order_ids) {
+        order_manager.cancel_order(id);
+    }
+    
+    deribit::PerformanceMetrics::instance().print_all_stats();
 }
 
 int main(int argc, char *argv[])
 {
     try
     {
+        deribit::Logger::instance().set_log_file("logs/trading_system.log");
+        deribit::Logger::instance().set_level(deribit::LogLevel::INFO);
+        LOG_INFO("Starting Deribit Trading System");
+        
         // Load configuration
         auto config = load_config("config/config.json");
 
@@ -76,7 +109,8 @@ int main(int argc, char *argv[])
             std::cout << "6. Get orderbook" << std::endl;
             std::cout << "7. Get ticker" << std::endl;
             std::cout << "8. Get instruments" << std::endl;
-            std::cout << "9. Exit" << std::endl;
+            std::cout << "9. Run performance test" << std::endl;
+            std::cout << "10. Exit" << std::endl;
 
             std::cout << "\nEnter command (1-9): ";
             std::getline(std::cin, command);
@@ -168,8 +202,10 @@ int main(int argc, char *argv[])
                 std::cout << "Retrieved instruments for currency: " << config.trading.default_currency << std::endl;
                 std::cout << instruments.serialize() << std::endl;
             }
-            else if (command == "9")
-            {
+            else if (command == "9") {
+                run_performance_test(order_manager, config);
+            }
+            else if (command == "10") {
                 break;
             }
         }

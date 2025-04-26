@@ -8,6 +8,7 @@
     },
     "trading": {
         "default_currency": "BTC",
+        "default_instrument": "BTC-PERPETUAL",
         "supported_instruments": ["BTC-PERPETUAL", "ETH-PERPETUAL"]
     }
 }
