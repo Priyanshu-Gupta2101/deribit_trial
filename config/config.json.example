@@ -1,0 +1,13 @@
+{
+    "api_credentials": {
+        "client_id": "PCifUMjl",
+        "client_secret": "3xkWdsWPgCv2ojtpStKVXrQnZC-dqZcVIBQMs0cdxp8"
+    },
+    "server": {
+        "websocket_port": 8080
+    },
+    "trading": {
+        "default_currency": "BTC",
+        "supported_instruments": ["BTC-PERPETUAL", "ETH-PERPETUAL"]
+    }
+}
