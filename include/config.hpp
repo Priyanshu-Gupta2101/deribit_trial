@@ -18,7 +18,7 @@ struct Config {
 
     struct Trading {
         std::string default_currency;
-        std::string default_instrument; // Add this line
+        std::string default_instrument;
         std::vector<std::string> supported_instruments;
     } trading;
 

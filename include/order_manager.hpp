@@ -10,14 +10,13 @@ struct OrderParams {
     std::string instrument_name;
     double amount;
     double price;
-    std::string type;  // "market" or "limit"
+    std::string type;
 };
 
 class OrderManager {
 public:
     explicit OrderManager(Config& config);
     
-    // Core functionality
     std::string place_buy_order(const OrderParams& params);
     std::string place_sell_order(const OrderParams& params);
     bool cancel_order(const std::string& order_id);

@@ -21,4 +21,4 @@ private:
     web::http::client::http_client client_;
 };
 
-}
+} // namespace deribit

@@ -1,44 +1,75 @@
-#include <websocketpp/client.hpp>
-#include <websocketpp/config/asio_no_tls_client.hpp>
+#include <boost/beast/core.hpp>
+#include <boost/beast/websocket.hpp>
+#include <boost/asio/strand.hpp>
+#include <boost/asio/connect.hpp>
 #include <iostream>
+#include <string>
+#include <thread>
 #include <json/json.h>
+#include "logger.hpp"
 
-using client = websocketpp::client<websocketpp::config::asio_client>;
-using message_ptr = websocketpp::config::asio_client::message_type::ptr;
+namespace beast = boost::beast;
+namespace websocket = beast::websocket;
+namespace asio = boost::asio;
+using tcp = boost::asio::ip::tcp;
 
-class WebsocketClient {
+class WebSocketClient {
 public:
-    WebsocketClient() {
-        client_.clear_access_channels(websocketpp::log::alevel::all);
-        client_.set_access_channels(websocketpp::log::alevel::connect);
-        client_.set_access_channels(websocketpp::log::alevel::disconnect);
-        client_.set_access_channels(websocketpp::log::alevel::app);
-
-        client_.init_asio();
-
-        client_.set_message_handler([this](websocketpp::connection_hdl hdl, message_ptr msg) {
-            on_message(hdl, msg);
-        });
-
-        client_.set_open_handler([this](websocketpp::connection_hdl hdl) {
-            on_open(hdl);
-        });
+    WebSocketClient() 
+        : ioc_()
+        , resolver_(ioc_)
+        , ws_(ioc_)
+        , connected_(false)
+    {
+        LOG_INFO("WebSocketClient initialized");
     }
 
-    void connect(const std::string& uri) {
-        websocketpp::lib::error_code ec;
-        connection_ = client_.get_connection(uri, ec);
-        
-        if (ec) {
-            std::cout << "Could not create connection: " << ec.message() << std::endl;
-            return;
+    ~WebSocketClient() {
+        close();
+        if (io_thread_ && io_thread_->joinable()) {
+            LOG_DEBUG("Joining IO thread");
+            io_thread_->join();
         }
+        LOG_INFO("WebSocketClient destroyed");
+    }
 
-        client_.connect(connection_);
-        client_.run();
+    void connect(const std::string& host, const std::string& port) {
+        try {
+            LOG_INFO("Connecting to %s:%s", host.c_str(), port.c_str());
+            
+            auto const results = resolver_.resolve(host, port);
+            
+            auto endpoint = asio::connect(ws_.next_layer(), results);
+            LOG_DEBUG("Connected to endpoint: %s:%d", endpoint.address().to_string().c_str(), endpoint.port());
+            
+            ws_.set_option(websocket::stream_base::decorator(
+                [](websocket::request_type& req) {
+                    req.set(beast::http::field::user_agent,
+                        std::string(BOOST_BEAST_VERSION_STRING) +
+                            " deribit-client");
+                }));
+            
+            std::string target = "/";
+            ws_.handshake(host, target);
+            connected_ = true;
+            
+            LOG_INFO("Successfully connected to WebSocket server at %s:%s", host.c_str(), port.c_str());
+            
+            io_thread_ = std::make_unique<std::thread>([this]() {
+                this->read_messages();
+            });
+            
+        } catch (const std::exception& e) {
+            LOG_ERROR("Error connecting to WebSocket server: %s", e.what());
+        }
     }
 
     void subscribe_to_symbol(const std::string& symbol) {
+        if (!connected_) {
+            LOG_WARNING("Cannot subscribe to %s: Not connected to WebSocket server", symbol.c_str());
+            return;
+        }
+        
         Json::Value request;
         request["action"] = "subscribe";
         request["symbol"] = symbol;
@@ -46,34 +77,83 @@ public:
         std::string message = Json::FastWriter().write(request);
         
         try {
-            client_.send(connection_, message, websocketpp::frame::opcode::text);
-            std::cout << "Sent subscription request for " << symbol << std::endl;
+            LOG_DEBUG("Sending subscription request: %s", message.c_str());
+            ws_.write(asio::buffer(message));
+            LOG_INFO("Successfully sent subscription request for %s", symbol.c_str());
         } catch (const std::exception& e) {
-            std::cout << "Error sending subscription: " << e.what() << std::endl;
+            LOG_ERROR("Error sending subscription for %s: %s", symbol.c_str(), e.what());
+        }
+    }
+
+    void close() {
+        if (connected_) {
+            try {
+                LOG_INFO("Closing WebSocket connection");
+                connected_ = false;
+                
+                ws_.close(websocket::close_code::normal);
+                LOG_INFO("WebSocket connection closed successfully");
+                
+            } catch (const std::exception& e) {
+                LOG_ERROR("Error closing WebSocket connection: %s", e.what());
+            }
         }
     }
 
 private:
-    void on_message(websocketpp::connection_hdl hdl, message_ptr msg) {
-        std::cout << "Received message: " << msg->get_payload() << std::endl;
+    void read_messages() {
+        LOG_INFO("Started message reading thread");
+        try {
+            while (connected_) {
+                beast::flat_buffer buffer;
+                LOG_DEBUG("Waiting for incoming message");
+                ws_.read(buffer);
+                
+                std::string message = beast::buffers_to_string(buffer.data());
+                LOG_INFO("Received message: %s", message.c_str());
+            }
+        } catch (const beast::system_error& e) {
+            if (e.code() == websocket::error::closed) {
+                LOG_INFO("WebSocket connection closed by server");
+            } else {
+                LOG_ERROR("System error in WebSocket: %s", e.what());
+            }
+            connected_ = false;
+        } catch (const std::exception& e) {
+            LOG_ERROR("Error reading from WebSocket: %s", e.what());
+            connected_ = false;
+        }
+        LOG_INFO("Message reading thread terminated");
     }
 
-    void on_open(websocketpp::connection_hdl hdl) {
-        std::cout << "Connection established" << std::endl;
-        subscribe_to_symbol("BTC-PERPETUAL");
-    }
-
-    client client_;
-    client::connection_ptr connection_;
+    asio::io_context ioc_;
+    tcp::resolver resolver_;
+    websocket::stream<tcp::socket> ws_;
+    std::unique_ptr<std::thread> io_thread_;
+    std::atomic<bool> connected_;
 };
 
 int main() {
     try {
-        WebsocketClient client;
-        std::cout << "Connecting to WebSocket server..." << std::endl;
-        client.connect("ws://localhost:8080");
+        deribit::Logger::instance().set_level(deribit::LogLevel::DEBUG);
+        deribit::Logger::instance().set_log_file("websocket_client.log");
+        
+        LOG_INFO("Application started");
+        
+        WebSocketClient client;
+        LOG_INFO("Connecting to WebSocket server...");
+        
+        client.connect("localhost", "8080");
+        
+        client.subscribe_to_symbol("BTC-PERPETUAL");
+        
+        LOG_INFO("Press Enter to exit");
+        std::cin.get();
+        LOG_INFO("Application shutting down");
+        
     } catch (const std::exception& e) {
-        std::cout << "Error: " << e.what() << std::endl;
+        LOG_CRITICAL("Fatal error: %s", e.what());
     }
+    
     return 0;
 }

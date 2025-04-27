@@ -3,11 +3,13 @@
 #include "order_manager.hpp"
 #include "market_data.hpp"
 #include "websocket_server.hpp"
+#include "performance_metrics.hpp"
 #include <iostream>
 #include <fstream>
 #include <json/json.h>
+#include <cpprest/asyncrt_utils.h>
+#include <logger.hpp>
 
-// Function to load configuration
 deribit::Config load_config(const std::string &config_path)
 {
     std::ifstream config_file(config_path);
@@ -23,7 +25,6 @@ deribit::Config load_config(const std::string &config_path)
         throw std::runtime_error("Failed to parse config file");
     }
 
-    // Read the supported instruments into a vector
     std::vector<std::string> supported_instruments;
     for (const auto &instrument : root["trading"]["supported_instruments"])
     {
@@ -76,10 +77,8 @@ int main(int argc, char *argv[])
         deribit::Logger::instance().set_level(deribit::LogLevel::INFO);
         LOG_INFO("Starting Deribit Trading System");
         
-        // Load configuration
         auto config = load_config("config/config.json");
 
-        // Initialize components
         deribit::Authentication auth(config);
         if (!auth.authenticate())
         {
@@ -91,12 +90,10 @@ int main(int argc, char *argv[])
         deribit::OrderManager order_manager(config);
         deribit::MarketData market_data(config);
 
-        // Initialize WebSocket server
         deribit::WebsocketServer ws_server(config);
-        ws_server.run(config.server.websocket_port); // Start WebSocket server on configured port
+        ws_server.run(config.server.websocket_port);
         std::cout << "WebSocket server started on port " << config.server.websocket_port << std::endl;
 
-        // Interactive console
         std::string command;
         while (true)
         {
@@ -176,7 +173,7 @@ int main(int argc, char *argv[])
             {
                 auto positions = order_manager.get_positions(config.trading.default_currency, "future");
                 std::cout << "Retrieved positions:" << std::endl;
-                std::cout << positions.serialize() << std::endl;
+                std::cout << utility::conversions::to_utf8string(positions.serialize()) << std::endl;
             }
             else if (command == "6")
             {
@@ -185,7 +182,7 @@ int main(int argc, char *argv[])
                 std::getline(std::cin, instrument_name);
                 auto orderbook = market_data.get_orderbook(instrument_name, 10);
                 std::cout << "Retrieved orderbook for instrument: " << instrument_name << std::endl;
-                std::cout << orderbook.serialize() << std::endl;
+                std::cout << utility::conversions::to_utf8string(orderbook.serialize()) << std::endl;
             }
             else if (command == "7")
             {
@@ -194,13 +191,13 @@ int main(int argc, char *argv[])
                 std::getline(std::cin, instrument_name);
                 auto ticker = market_data.get_ticker(instrument_name);
                 std::cout << "Retrieved ticker for instrument: " << instrument_name << std::endl;
-                std::cout << ticker.serialize() << std::endl;
+                std::cout << utility::conversions::to_utf8string(ticker.serialize()) << std::endl;
             }
             else if (command == "8")
             {
                 auto instruments = market_data.get_instruments(config.trading.default_currency, "future");
                 std::cout << "Retrieved instruments for currency: " << config.trading.default_currency << std::endl;
-                std::cout << instruments.serialize() << std::endl;
+                std::cout << utility::conversions::to_utf8string(instruments.serialize()) << std::endl;
             }
             else if (command == "9") {
                 run_performance_test(order_manager, config);
@@ -210,7 +207,6 @@ int main(int argc, char *argv[])
             }
         }
 
-        // Cleanup
         ws_server.stop();
         return 0;
     }

@@ -75,7 +75,6 @@ private:
 
         std::lock_guard<std::mutex> lock(mutex_);
         
-        // Get current time
         auto now = std::time(nullptr);
         auto tm = *std::localtime(&now);
         
@@ -88,18 +87,14 @@ private:
             case LogLevel::CRITICAL: level_str = "CRITICAL"; break;
         }
         
-        // Format the message
         char buffer[1024];
         snprintf(buffer, sizeof(buffer), format.c_str(), args...);
         
-        // Format with timestamp, level and message
         std::ostringstream oss;
         oss << std::put_time(&tm, "%Y-%m-%d %H:%M:%S") << " [" << level_str << "] " << buffer;
         
-        // Output to console
         std::cout << oss.str() << std::endl;
         
-        // Output to file if opened
         if (file_.is_open()) {
             file_ << oss.str() << std::endl;
         }

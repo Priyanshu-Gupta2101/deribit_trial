@@ -45,4 +45,4 @@ private:
 #define START_TIMING(id) deribit::PerformanceMetrics::instance().start_measurement(id)
 #define END_TIMING(id) deribit::PerformanceMetrics::instance().end_measurement(id)
 
-}
+} // namespace deribit
